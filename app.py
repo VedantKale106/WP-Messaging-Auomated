@@ -56,10 +56,12 @@ Would you like to see it?
 def process_dataframe(df):
     """Helper to process the dataframe into the grouped dictionary format"""
     df.columns = [c.strip() for c in df.columns]
-    df.fillna("-", inplace=True)
+    
+    # DO NOT use fillna("-") on the whole dataframe if you have numeric columns
+    # Instead, fillna for specific text columns or use an empty string
+    df = df.fillna("")
 
     client_list = []
-    # Enhanced Stats
     stats = {
         "Total": 0, 
         "Completed": 0, 
@@ -72,18 +74,22 @@ def process_dataframe(df):
 
     for _, row in df.iterrows():
         status = str(row.get("Status", "Pending")).strip()
-        amount_val = str(row.get("Amount", "0.00")).strip()
+        # Force amount to string before cleaning to avoid float64 errors
+        amount_val = str(row.get("Amount", "0")).strip()
         
         # Parse amount for revenue
         try:
-            # Remove non-numeric chars except dot
-            clean_amt = float(re.sub(r'[^\d.]', '', amount_val))
-        except:
+            # If the value is just "-" or empty, set to 0
+            if amount_val in ["-", ""]:
+                clean_amt = 0.0
+            else:
+                # Remove currency symbols, commas, etc.
+                clean_amt = float(re.sub(r'[^\d.]', '', amount_val))
+        except (ValueError, TypeError):
             clean_amt = 0.0
 
         stats["Total"] += 1
         
-        # Logic for grouping and skipping "Not Interested" from the main list
         is_not_interested = status.lower() == "not interested"
         
         if status.lower() == "completed":
@@ -91,15 +97,15 @@ def process_dataframe(df):
             stats["TotalRevenue"] += clean_amt
         elif is_not_interested:
             stats["NotInterested"] += 1
-            # Skip adding to the visible card list
             continue
         else:
             stats["Pending"] += 1
         
         referred_by = str(row.get("Reffered By", "-")).strip()
-        if referred_by != "-":
+        if referred_by and referred_by != "-":
             salespeople.add(referred_by)
 
+        # Rest of your processing logic...
         name = str(row.get("Business Name", "")).strip()
         city = str(row.get("Location", "")).strip()
         raw_phone = str(row.get("Phone", ""))
@@ -145,7 +151,7 @@ def process_dataframe(df):
             "category": category,
             "referred_by": referred_by,
             "service": service,
-            "amount": amount_val,
+            "amount": amount_val if amount_val not in ["", "0"] else "0",
             "wa_link": f"https://wa.me/91{phone}?text={encoded_msg}",
             "call_link": f"tel:+91{phone}",
             "maps_link": maps_link,
@@ -154,7 +160,6 @@ def process_dataframe(df):
             "sort_key": sort_key
         })
 
-    # Calculate final conversion rate
     if stats["Total"] > 0:
         stats["ConversionRate"] = round((stats["Completed"] / stats["Total"]) * 100, 1)
 
@@ -600,4 +605,5 @@ function copyToClipboard(btn, text) {
 """
 
 if __name__ == "__main__":
+
     app.run(host='0.0.0.0', port=5000, debug=True)
