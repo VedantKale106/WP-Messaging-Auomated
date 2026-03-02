@@ -46,7 +46,7 @@ def home():
                     # Force assign columns assuming the standard format
                     df.columns = [
                         "Business Name", "Client Name", "City", "Phone", 
-                        "Date", "Salesperson", "Service", "Status"
+                        "Date", "Salesperson", "Service", "Status", "Amount"
                     ]
                     df.fillna("", inplace=True)
 
@@ -229,4 +229,5 @@ function copyToClipboard(btnElement, text) {
 if __name__ == "__main__":
     # Host '0.0.0.0' allows you to access this from your mobile browser
     # if your phone is on the same WiFi network as your computer.
+
     app.run(host='0.0.0.0', port=5000, debug=True)
