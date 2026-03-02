@@ -54,11 +54,8 @@ Would you like to see it?
 }
 
 def process_dataframe(df):
-    """Helper to process the dataframe into the grouped dictionary format"""
+    """Processes the dataframe specifically for MM/DD/YY date formats and Lead Management"""
     df.columns = [c.strip() for c in df.columns]
-    
-    # DO NOT use fillna("-") on the whole dataframe if you have numeric columns
-    # Instead, fillna for specific text columns or use an empty string
     df = df.fillna("")
 
     client_list = []
@@ -74,30 +71,27 @@ def process_dataframe(df):
 
     for _, row in df.iterrows():
         status = str(row.get("Status", "Pending")).strip()
-        # Force amount to string before cleaning to avoid float64 errors
         amount_val = str(row.get("Amount", "0")).strip()
         
-        # Parse amount for revenue
+        # Parse amount for revenue (remove ₹, commas, etc.)
         try:
-            # If the value is just "-" or empty, set to 0
             if amount_val in ["-", ""]:
                 clean_amt = 0.0
             else:
-                # Remove currency symbols, commas, etc.
                 clean_amt = float(re.sub(r'[^\d.]', '', amount_val))
         except (ValueError, TypeError):
             clean_amt = 0.0
 
         stats["Total"] += 1
         
+        # Track Status
         is_not_interested = status.lower() == "not interested"
-        
         if status.lower() == "completed":
             stats["Completed"] += 1
             stats["TotalRevenue"] += clean_amt
         elif is_not_interested:
             stats["NotInterested"] += 1
-            continue
+            # We still show "Not Interested" in the list but skip revenue
         else:
             stats["Pending"] += 1
         
@@ -105,7 +99,6 @@ def process_dataframe(df):
         if referred_by and referred_by != "-":
             salespeople.add(referred_by)
 
-        # Rest of your processing logic...
         name = str(row.get("Business Name", "")).strip()
         city = str(row.get("Location", "")).strip()
         raw_phone = str(row.get("Phone", ""))
@@ -122,16 +115,21 @@ def process_dataframe(df):
         if not name or not phone:
             continue
 
-        # Date Parsing
+        # CORRECTED DATE PARSING FOR MM/DD/YY
         try:
-            clean_date_str = date_str.split(' ')[0]
-            dt_obj = pd.to_datetime(clean_date_str, dayfirst=True)
+            # Handle MM/DD/YY specifically
+            dt_obj = pd.to_datetime(date_str, format='%m/%d/%y', errors='coerce')
+            if pd.isna(dt_obj):
+                # Fallback if the sheet uses YYYY or other formats
+                dt_obj = pd.to_datetime(date_str, errors='coerce')
+            
             sort_key = dt_obj.strftime('%Y-%m-%d')
             display_date = dt_obj.strftime('%d %b %Y')
         except:
             sort_key = "0000-00-00"
             display_date = date_str
 
+        # Template Selection
         template_key = "Default"
         for key in MESSAGE_TEMPLATES.keys():
             if key.lower() in category.lower():
@@ -160,9 +158,11 @@ def process_dataframe(df):
             "sort_key": sort_key
         })
 
+    # Calculations
     if stats["Total"] > 0:
         stats["ConversionRate"] = round((stats["Completed"] / stats["Total"]) * 100, 1)
 
+    # Sort: Newest Dates First
     client_list.sort(key=lambda x: x['sort_key'], reverse=True)
 
     grouped = {}
@@ -314,12 +314,13 @@ TEMPLATE = """
         background: var(--gold-gradient);
         color: #000;
         border: none;
-        padding: 8px 15px;
-        border-radius: 20px;
+        padding: 10px;
+        border-radius: 25px;
         font-weight: bold;
         text-decoration: none;
-        font-size: 12px;
+        font-size: 13px;
         text-align: center;
+        display: block;
     }
 
     .date-header { 
@@ -468,18 +469,18 @@ TEMPLATE = """
         </div>
         <div class="stat-card">
             <span class="stat-value" style="color: #ff4d4d;">{{ stats.NotInterested }}</span>
-            <span class="stat-label">Not Interested</span>
+            <span class="stat-label">Not Int.</span>
         </div>
     </div>
     
     <div class="revenue-summary">
         <div class="rev-item">
-            <span>Conversion Rate</span>
+            <span>Conversion</span>
             <b>{{ stats.ConversionRate }}%</b>
         </div>
         <div class="rev-item" style="text-align: right;">
-            <span>Total Revenue</span>
-            <b>₹{{ "{:,.2f}".format(stats.TotalRevenue) }}</b>
+            <span>Revenue</span>
+            <b>₹{{ "{:,.0f}".format(stats.TotalRevenue) }}</b>
         </div>
     </div>
 </div>
@@ -508,7 +509,7 @@ TEMPLATE = """
             <div class="date-group">
                 <div class="date-header">
                     <span>{{ date }}</span>
-                    <span>{{ clients|length }} Active</span>
+                    <span>{{ clients|length }} Leads</span>
                 </div>
                 {% for c in clients %}
                 <div class="card client-card" data-salesperson="{{ c.referred_by }}">
@@ -533,7 +534,7 @@ TEMPLATE = """
                     <div class="client-info-grid" style="border-top: 1px solid #222; padding-top: 8px; margin-top: 8px;">
                         <div>
                             <span class="info-label">Service</span>
-                            <span class="client-info">{{c.service}}</span>
+                            <span class="client-info" style="color: var(--text-white);">{{c.service}}</span>
                         </div>
                         <div style="text-align: right;">
                             <span class="info-label">Amount</span>
@@ -545,16 +546,16 @@ TEMPLATE = """
 
                     <div class="btn-group">
                         <a href="{{c.wa_link}}" target="_blank" class="btn-action btn-wa">
-                            <span>WhatsApp Pitch</span>
+                            <span>Send WhatsApp Pitch</span>
                         </a>
                         <a href="{{c.call_link}}" class="btn-action btn-call">
-                            <span>Call</span>
+                            <span>Call Now</span>
                         </a>
                         <a href="{{c.maps_link}}" target="_blank" class="btn-action btn-maps">
-                            <span>Maps</span>
+                            <span>Google Maps</span>
                         </a>
                         <button class="btn-action btn-copy" onclick="copyToClipboard(this, `{{c.raw_message}}`)">
-                            <span>Copy</span>
+                            <span>Copy Message</span>
                         </button>
                     </div>
                 </div>
@@ -589,14 +590,22 @@ function filterClients() {
 
 function copyToClipboard(btn, text) {
     const originalContent = btn.innerHTML;
-    navigator.clipboard.writeText(text).then(() => {
-        btn.innerHTML = "<span>Copied!</span>";
-        btn.style.background = "#d4af37";
-        setTimeout(() => {
-            btn.innerHTML = originalContent;
-            btn.style.background = "#2a2a2a";
-        }, 1500);
-    });
+    // Create temporary textarea
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+
+    btn.innerHTML = "<span>Copied!</span>";
+    btn.style.background = "#d4af37";
+    btn.style.color = "#000";
+    setTimeout(() => {
+        btn.innerHTML = originalContent;
+        btn.style.background = "#2a2a2a";
+        btn.style.color = "#e0e0e0";
+    }, 1500);
 }
 </script>
 
@@ -605,5 +614,4 @@ function copyToClipboard(btn, text) {
 """
 
 if __name__ == "__main__":
-
     app.run(host='0.0.0.0', port=5000, debug=True)
